@@ -121,6 +121,9 @@ function mirrorGate(input, store, rawCfg) {
   if (input.event === 'config') {                          // MIRROR from the view workflow's settings
     const on = input.mirror === true;
     if (store.mirrorOn !== on) store.mirrorOn = on;
+    // The view workflow draws the frame itself (MIRROR_SOURCE "render"): stay out of its way.
+    const own = input.source === undefined || input.source === 'clock';
+    if (store.mirrorOwn !== own) store.mirrorOwn = own;
     return null;
   }
   if (input.event === 'active') {
@@ -130,7 +133,7 @@ function mirrorGate(input, store, rawCfg) {
     return null;
   }
   const on = typeof store.mirrorOn === 'boolean' ? store.mirrorOn : cfg.MIRROR;
-  if (input.event !== 'tick' || !on || store.mirrorFg !== true) return null;
+  if (input.event !== 'tick' || !on || store.mirrorFg !== true || store.mirrorOwn === false) return null;
   return { url: `http://${cfg.AWTRIX_HOST}/api/v1/display/screen`, topic: cfg.MIRROR_TOPIC };
 }
 

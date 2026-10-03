@@ -145,7 +145,30 @@ test('push workflow: the mirror is gated, rendered in a Code node and published 
   const pub = wf.nodes.find((n) => n.name === 'Publish Mirror');
   assert.equal(pub.parameters.options.retain, true);
   assert.equal(pub.onError, 'continueRegularOutput');
-  assert.equal(load(FILES[1]).nodes.find((n) => n.name === 'Mirror Frame'), undefined, 'view mode has no mirror');
+});
+
+test('view workflow: with MIRROR_SOURCE "render" it draws and publishes the mirror itself', () => {
+  const wf = load(FILES[1]);
+  assert.ok(wf.connections['Clawd Engine'].main[0].some((l) => l.node === 'Has Mirror'));
+  assert.ok(wf.connections['Has Mirror'].main[0].some((l) => l.node === 'Mirror Frame'));
+  assert.ok(wf.connections['Mirror Frame'].main[0].some((l) => l.node === 'Publish Mirror'));
+  const settings = Object.fromEntries(wf.nodes.find((n) => n.name === 'Settings').parameters.assignments.assignments.map((a) => [a.name, a.value]));
+  assert.equal(settings['cfg.MIRROR_SOURCE'], 'clock', 'reads the clock by default, as before');
+  assert.equal(settings['cfg.CLOCK'], true);
+  assert.equal(settings['cfg.MIRROR_EVERY_SEC'], 30);
+  assert.equal(settings['cfg.MIRROR_TOPIC'], 'clawd/screen');
+  // The engine node, run as n8n runs it, hands the Mirror Frame node a frame it turns into a PNG.
+  const engine = wf.nodes.find((n) => n.name === 'Clawd Engine');
+  const cfg = { MODE: 'view', MIRROR: true, MIRROR_SOURCE: 'render', CLOCK: false };
+  const r = runCode(engine.parameters.jsCode, [{ event: 'tick', cfg }], {});
+  assert.equal(r.length, 1);
+  assert.equal(r[0].mirror, 'clawd/screen');
+  const png = runCode(wf.nodes.find((n) => n.name === 'Mirror Frame').parameters.jsCode, r, {});
+  assert.equal(png.length, 1);
+  assert.equal(Buffer.from(png[0].message, 'base64').subarray(1, 4).toString(), 'PNG');
+  const pub = wf.nodes.find((n) => n.name === 'Publish Mirror');
+  assert.equal(pub.parameters.options.retain, true);
+  assert.equal(pub.onError, 'continueRegularOutput');
 });
 
 test('view mirror workflow: reads the screen only while Clawd is shown and publishes a retained PNG', () => {

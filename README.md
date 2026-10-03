@@ -119,8 +119,9 @@ Too easy or too hard? Pick one of five **difficulty** levels, from *I Can Win* t
    [`homeassistant/dashboard.yaml`](homeassistant/dashboard.yaml). It has two pages: **Clawd**
    (the pet, its stats and care buttons) and **Settings**.
 3. **Optional, see the pet:** turn on **Screen mirror** on the Settings page. In view
-   mode, also import [`n8n/clawd-workflow-mirror.json`](n8n/clawd-workflow-mirror.json) and fill
-   in its MQTT credential and Settings like before.
+   mode, either set `MIRROR_SOURCE` to `render` in the Settings node (n8n draws the picture, no
+   clock needed), or import [`n8n/clawd-workflow-mirror.json`](n8n/clawd-workflow-mirror.json)
+   and fill in its MQTT credential and Settings like before (a picture of the clock's screen).
 
 ## Settings
 

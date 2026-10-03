@@ -54,8 +54,12 @@ const DEFAULTS = {
   OFFSCREEN_REFRESH_SEC: 30,  // push mode: refresh the frame this often while Clawd is not shown
   STALE_AFTER_SEC: 90,        // push mode: AWTRIX draws a red frame if no update arrives in time
   BURST: true,                // push mode: extra frames while an effect plays
-  MIRROR: false,              // push mode: also publish each frame as a PNG (e.g. an HA camera)
-  MIRROR_TOPIC: 'clawd/screen'
+  MIRROR: false,              // also publish the pet as a PNG (e.g. an HA camera); see MIRROR_SOURCE
+  MIRROR_TOPIC: 'clawd/screen',
+  MIRROR_SOURCE: 'clock',     // view mode: 'clock' = the mirror workflow reads the clock's screen,
+                              // 'render' = this workflow draws the frame itself, no clock involved
+  MIRROR_EVERY_SEC: 30,       // view mode with MIRROR_SOURCE 'render': publish at least this often (and on every change)
+  CLOCK: true                 // view mode: false = no clock at all; never call it (switch to Clawd, notifications)
 };
 
 // Difficulty presets, the five skill levels of Quake III Arena. Medium is the
@@ -172,7 +176,7 @@ const NUM_RANGES = {
   ELDER_LIFE_HOURS: [1, 24 * 365], LEGEND_AFTER_HOURS: [1, 24 * 365], SICK_CHANCE_PCT: [0, 100],
   CARE_HAPPY: [-1000, 1000], CARE_GRUMPY: [-1000, 1000], CARE_LEGEND: [-1000, 5000],
   SLEEP_FROM: [0, 23], SLEEP_TO: [0, 23], NIGHT_FROM: [0, 23], NIGHT_TO: [0, 23],
-  OFFSCREEN_REFRESH_SEC: [5, 3600], STALE_AFTER_SEC: [0, 86400]
+  OFFSCREEN_REFRESH_SEC: [5, 3600], STALE_AFTER_SEC: [0, 86400], MIRROR_EVERY_SEC: [10, 3600]
 };
 const LIVE_SETTINGS = [
   ['DIFFICULTY', 'select', 'Difficulty', 'mdi:speedometer'],
@@ -252,6 +256,8 @@ function makeConfig(raw) {
 
   const mode = String(pick('MODE') || DEFAULTS.MODE).toLowerCase();
   if (mode === 'push' || mode === 'view') cfg.MODE = mode; else warnings.push('MODE');
+  const src = String(pick('MIRROR_SOURCE') || DEFAULTS.MIRROR_SOURCE).toLowerCase();
+  if (src === 'clock' || src === 'render') cfg.MIRROR_SOURCE = src; else warnings.push('MIRROR_SOURCE');
 
   if (pick('TZ') !== undefined) {
     const tz = String(pick('TZ')).trim();
@@ -275,7 +281,7 @@ function makeConfig(raw) {
     const p = PRESETS[cfg.DIFFICULTY];
     cfg.CARE_HAPPY = p.CARE_HAPPY; cfg.CARE_GRUMPY = p.CARE_GRUMPY; cfg.CARE_LEGEND = p.CARE_LEGEND;
   }
-  for (const k of ['SOUND', 'NOTIFY', 'SWITCH_ON_EVENTS', 'BURST', 'MIRROR']) {
+  for (const k of ['SOUND', 'NOTIFY', 'SWITCH_ON_EVENTS', 'BURST', 'MIRROR', 'CLOCK']) {
     if (pick(k) === undefined) continue;
     cfg[k] = toBool(pick(k), DEFAULTS[k]);
     if (toBool(pick(k), null) === null) warnings.push(k);
@@ -867,7 +873,7 @@ function applySettings(payload, store, raw) {
 
 // The settings message on CONFIG_TOPIC.
 function settingsMessage(cfg) {
-  const o = { MODE: cfg.MODE };
+  const o = { MODE: cfg.MODE, MIRROR_SOURCE: cfg.MIRROR_SOURCE, CLOCK: cfg.CLOCK };
   for (const k of LIVE_KEYS) o[k] = cfg[k];
   return JSON.stringify(o);
 }
@@ -1010,6 +1016,20 @@ function run(input, store, rawCfg, nowMs) {
     }
   }
 
+  // View mode without the clock's screen: draw the pet here (the push-mode
+  // renderer, on the same state) and publish it as the mirror PNG - when what
+  // it shows changes, after an action, and at least every MIRROR_EVERY_SEC.
+  if (cfg.MODE === 'view' && cfg.MIRROR && cfg.MIRROR_SOURCE === 'render') {
+    const msig = signature(s, cfg, nowMs);
+    if (userAct || msig !== dev.mirSig || nowMs - (dev.mirAt || 0) >= cfg.MIRROR_EVERY_SEC * 1000) {
+      out.payload = render(s, cfg, nowMs);
+      out.mirror = cfg.MIRROR_TOPIC;
+      dev.mirSig = msig; dev.mirAt = nowMs;
+    }
+  }
+  // No clock at all: nothing to switch to, nowhere to notify.
+  if (cfg.MODE === 'view' && !cfg.CLOCK) { out.switchTo = false; out.notify = null; out.sound = null; }
+
   // The state line: the view app draws from it, and Home Assistant reads it in
   // both modes. Published when anything visible changed, and at least once a
   // minute so a restarted device or HA gets fresh data quickly.
@@ -1054,7 +1074,7 @@ function significant(s, dev) {
   const o = Object.assign({}, s);
   delete o.last_ts; delete o.decAcc; delete o.age; delete o.pt; delete o.saved;
   return JSON.stringify(o) + '|' + dev.fg + '|' + dev.sig + '|' + dev.pubSig + '|' +
-    (dev.fg === false ? dev.lastPush : 0) + '|' + dev.lastPub + '|' + dev.cfgPub;
+    (dev.fg === false ? dev.lastPush : 0) + '|' + dev.lastPub + '|' + dev.cfgPub + '|' + (dev.mirAt || 0);
 }
 
 // The n8n entry point. n8n loads the workflow's static data when a run starts

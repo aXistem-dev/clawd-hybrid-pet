@@ -44,7 +44,10 @@ listed under `warnings` in the engine's output.
 | `BURST` | `true` | push mode: extra frames every 250 ms while an effect plays |
 | `OFFSCREEN_REFRESH_SEC` | `30` | push mode: refresh interval while another app is shown |
 | `STALE_AFTER_SEC` | `90` | push mode: red frame after this long without updates (0 = off) |
-| `MIRROR_TOPIC` | `clawd/screen` | push mode: where the PNG goes (the mirror workflow has its own) |
+| `MIRROR_TOPIC` | `clawd/screen` | where the PNG goes (the mirror workflow has its own) |
+| `MIRROR_SOURCE` | `clock` | view mode: `clock` = the mirror workflow reads the clock's screen; `render` = this workflow draws the picture itself ([below](#seeing-the-pet-screen-mirror)) |
+| `MIRROR_EVERY_SEC` | `30` | view mode with `MIRROR_SOURCE` `render`: publish at least this often, besides every change (10 - 3600) |
+| `CLOCK` | `true` | view mode: `false` runs the pet without any clock - n8n never calls one (no switching to Clawd, no notifications) |
 | `STATE_TOPIC` | `clawd/state` | the pet's state, retained; in view mode it must match the clock app's "State topic" |
 | `CMD_TOPIC` | `clawd/cmd` | view mode: the clock app's commands; must match its "Command topic" |
 | `HA_TOPIC` | `clawd/ha` | Home Assistant's actions: apply and bring Clawd on screen. Not the same as `CMD_TOPIC` |
@@ -199,8 +202,13 @@ Home Assistant's **Screen** camera shows a picture of the clock while `MIRROR` i
 an image entity would add a database row for every frame.
 
 - **Push mode:** every pushed frame is also published as a PNG. Nothing else to install.
-- **View mode:** the clock draws the pet itself, so import
-  [`n8n/clawd-workflow-mirror.json`](../n8n/clawd-workflow-mirror.json) as well: set its MQTT
+- **View mode, picture drawn in n8n** (`MIRROR_SOURCE` = `render`): the view workflow draws the
+  pet with the push-mode renderer and publishes it - when something visible changes, right after
+  an action, and at least every `MIRROR_EVERY_SEC`. No clock is involved, so this also works with
+  `CLOCK` = `false` (the pet lives in Home Assistant only). The picture is one still frame per
+  publish: the clock's smooth animation, menus and games only exist on the clock.
+- **View mode, the clock's screen** (`MIRROR_SOURCE` = `clock`): the clock draws the pet itself,
+  so import [`n8n/clawd-workflow-mirror.json`](../n8n/clawd-workflow-mirror.json) as well: set its MQTT
   credential and the same `AWTRIX_HOST`, `MQTT_PREFIX` and `APP_NAME` as the view workflow, and
   publish it. While Clawd is on screen it reads the clock's screen every 10 s (2 s timeout) and
   publishes it; with another app on screen it reads nothing. It follows the view workflow's

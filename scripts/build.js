@@ -85,7 +85,7 @@ for (const item of $input.all()) {
   if (at < 0) {
     let o = null;
     try { o = JSON.parse(String(item.json.message ?? '')); } catch (e) { /* not settings */ }
-    if (o && typeof o.MIRROR === 'boolean') out.push({ json: { event: 'config', mirror: o.MIRROR } });
+    if (o && typeof o.MIRROR === 'boolean') out.push({ json: { event: 'config', mirror: o.MIRROR, source: o.MIRROR_SOURCE } });
     continue;
   }
   out.push({ json: { event: 'active', app: String(item.json.message ?? '').trim().replace(/^"|"$/g, ''), prefix: topic.slice(0, at) } });
@@ -222,7 +222,8 @@ function settings(mode, pos) {
   ];
   if (mode === 'push') rows.push(['BURST', d.BURST, 'boolean'], ['OFFSCREEN_REFRESH_SEC', d.OFFSCREEN_REFRESH_SEC, 'number'], ['STALE_AFTER_SEC', d.STALE_AFTER_SEC, 'number']);
   rows.push(['MIRROR', d.MIRROR, 'boolean']);
-  if (mode === 'push') rows.push(['MIRROR_TOPIC', d.MIRROR_TOPIC, 'string']);
+  if (mode === 'view') rows.push(['MIRROR_SOURCE', d.MIRROR_SOURCE, 'string'], ['MIRROR_EVERY_SEC', d.MIRROR_EVERY_SEC, 'number'], ['CLOCK', d.CLOCK, 'boolean']);
+  rows.push(['MIRROR_TOPIC', d.MIRROR_TOPIC, 'string']);
   rows.push(['STATE_TOPIC', d.STATE_TOPIC, 'string']);
   if (mode === 'view') rows.push(['CMD_TOPIC', d.CMD_TOPIC, 'string']);
   rows.push(['HA_TOPIC', d.HA_TOPIC, 'string'], ['CONFIG_TOPIC', d.CONFIG_TOPIC, 'string'], ['CONFIG_SET_TOPIC', d.CONFIG_SET_TOPIC, 'string']);
@@ -381,7 +382,12 @@ function viewWorkflow() {
     ifNode('Has Settings', '!!$json.config', [280, -100]),
     publishConfig([500, -100]),
     ifNode('Anything To Send', '$json.switchTo || !!$json.notify', [280, 300]),
-    background('Send To AWTRIX', awtrixSubWorkflow([]), [500, 300])
+    background('Send To AWTRIX', awtrixSubWorkflow([]), [500, 300]),
+    ifNode('Has Mirror', '!!$json.mirror && !!$json.payload', [280, 500]),
+    code('Mirror Frame', MIRROR + MIRROR_WRAPPER, [500, 500], 'Generated from n8n/clawd-mirror.js. Only runs with MIRROR on and MIRROR_SOURCE "render".'),
+    { id: id('mqtt'), name: 'Publish Mirror', type: 'n8n-nodes-base.mqtt', typeVersion: 1, position: [720, 500],
+      credentials: MQTT_CRED, onError: 'continueRegularOutput',
+      parameters: { topic: '={{ $json.topic }}', sendInputData: false, message: '={{ $json.message }}', options: { retain: true, qos: 0 } } }
   ]);
   const c = {};
   link(c, 'Tick every 15s', 'Tick Event');
@@ -395,6 +401,9 @@ function viewWorkflow() {
   link(c, 'Has State', 'Publish State');
   link(c, 'Has Settings', 'Publish Settings');
   link(c, 'Anything To Send', 'Send To AWTRIX');
+  link(c, 'Clawd Engine', 'Has Mirror');
+  link(c, 'Has Mirror', 'Mirror Frame');
+  link(c, 'Mirror Frame', 'Publish Mirror');
   return { name: 'Clawd (view mode)', nodes, connections: c, active: false, settings: WF_SETTINGS, meta: { clawdEngine: E.ENGINE_VERSION } };
 }
 

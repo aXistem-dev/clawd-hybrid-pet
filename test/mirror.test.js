@@ -121,3 +121,47 @@ test('view mirror: reads the screen only on ticks while MIRROR is on and Clawd i
   const same = new Proxy({ mirrorFg: true }, { set() { throw new Error('unchanged app wrote static data'); } });
   M.mirrorGate({ event: 'active', app: 'clawd', prefix: 'awtrix' }, same, cfg);
 });
+
+test('engine, view mode: MIRROR_SOURCE "render" draws the frame in n8n, on change and at least every MIRROR_EVERY_SEC', () => {
+  const t = Date.UTC(2026, 8, 27, 8, 0, 0);
+  const cfg = { MODE: 'view', MIRROR: true, MIRROR_SOURCE: 'render', MIRROR_EVERY_SEC: 30 };
+  assert.equal(E.run({ event: 'tick' }, {}, { MODE: 'view', MIRROR: true }, t).mirror, null, '"clock" (the default) leaves it to the mirror workflow');
+  assert.equal(E.run({ event: 'tick' }, {}, Object.assign({}, cfg, { MIRROR: false }), t).mirror, null, 'MIRROR off: nothing');
+  const store = {};
+  const first = E.runN8n({ event: 'tick' }, store, cfg, t);
+  assert.equal(first.mirror, 'clawd/screen');
+  assert.equal(first.push, false, 'nothing is pushed to a clock');
+  const img = decode(Buffer.from(M.pngBase64(first.payload), 'base64'));
+  assert.equal(img.w, 256);
+  // Unchanged pet: quiet until MIRROR_EVERY_SEC has passed, then again.
+  assert.equal(E.runN8n({ event: 'tick' }, store, cfg, t + 15000).mirror, null);
+  assert.equal(E.runN8n({ event: 'tick' }, store, cfg, t + 31000).mirror, 'clawd/screen');
+  // An action shows at once.
+  assert.equal(E.runN8n({ event: 'cmd', payload: 'feed', topic: 'clawd/ha' }, store, cfg, t + 33000).mirror, 'clawd/screen');
+  // Range: at least 10 s.
+  assert.equal(E.makeConfig({ MIRROR_EVERY_SEC: 2 }).MIRROR_EVERY_SEC, 10);
+  assert.ok(E.makeConfig({ MIRROR_SOURCE: 'tv' }).warnings.includes('MIRROR_SOURCE'));
+});
+
+test('engine, view mode: CLOCK false never calls the clock', () => {
+  const t = Date.UTC(2026, 8, 27, 8, 0, 0);
+  const on = E.run({ event: 'cmd', payload: 'feed', topic: 'clawd/ha' }, {}, { MODE: 'view' }, t);
+  assert.equal(on.switchTo, true, 'with a clock, Home Assistant brings Clawd on screen');
+  const off = E.run({ event: 'cmd', payload: 'feed', topic: 'clawd/ha' }, {}, { MODE: 'view', CLOCK: false, NOTIFY: true }, t);
+  assert.equal(off.switchTo, false);
+  assert.equal(off.notify, null);
+  assert.ok(off.publish, 'the state line still goes out');
+  assert.equal(JSON.parse(off.config.message).CLOCK, false, 'and the settings say so');
+});
+
+test('view mirror: stands down while the view workflow draws the frame itself', () => {
+  const cfg = { MIRROR: true, AWTRIX_HOST: 'clock.local', MQTT_PREFIX: 'awtrix' };
+  const store = { mirrorFg: true };
+  assert.ok(M.mirrorGate({ event: 'tick' }, store, cfg), 'reads the clock by default');
+  M.mirrorGate({ event: 'config', mirror: true, source: 'render' }, store, cfg);
+  assert.equal(M.mirrorGate({ event: 'tick' }, store, cfg), null);
+  M.mirrorGate({ event: 'config', mirror: true, source: 'clock' }, store, cfg);
+  assert.ok(M.mirrorGate({ event: 'tick' }, store, cfg));
+  M.mirrorGate({ event: 'config', mirror: true }, store, cfg);
+  assert.ok(M.mirrorGate({ event: 'tick' }, store, cfg), 'an older view workflow (no MIRROR_SOURCE) means the clock');
+});

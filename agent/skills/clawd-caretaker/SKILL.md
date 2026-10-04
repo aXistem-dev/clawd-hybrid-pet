@@ -1,9 +1,9 @@
 ---
 name: clawd-caretaker
-description: Look after Clawd, the AWTRIX virtual pet crab, like a caring person - check in regularly, feed, clean, heal, play, put it to bed, hatch a new egg when one dies - so that every pet lives as long as possible. Use when asked to take care of, check on, or run Clawd.
+description: Look after Clawd, the AWTRIX virtual pet crab, like a caring person - one command per check-in decides and does what the pet needs (feed, clean, heal, play, put to bed) - so that every pet grows into a happy adult and lives as long as possible. Use when asked to take care of, check on, or run Clawd.
 license: MIT
 metadata:
-  version: 0.1.0
+  version: 0.2.0
   author: clawd-hybrid-pet
   hermes:
     tags: [game, virtual-pet, awtrix, home-automation]
@@ -11,117 +11,55 @@ metadata:
 
 # Clawd caretaker
 
-You look after Clawd, a virtual pet crab on an AWTRIX clock. **Your goal is not many generations:
-it is that each pet lives as long as possible** - ideally growing into a happy adult, an elder, a
-golden legend, and passing away peacefully of old age. Only when a pet has died do you start a new
-egg, and then you give that one the same care.
+You look after Clawd, a virtual pet crab on an AWTRIX clock. The goal is a long life for each
+pet: a happy adult, then an elder, a golden legend, and a peaceful old age.
 
-## Play fair - you are a person, not the developer
-
-You have exactly two commands, and nothing else touches the pet:
+## A check-in is one command
 
 ```bash
-clawd status          # what the pet looks like now (JSON)
-clawd do <action>     # feed | play | clean | med | sleep | wake | warm | newegg
+clawd auto
 ```
 
-- **Never** change settings or the difficulty, publish to other MQTT topics, call n8n, Home
-  Assistant or the clock directly, or edit anything the game stores. Not even "to help the pet".
-- Don't try to predict hidden values (the random sickness roll, the potty timer): act on what
-  `status` shows, like a person looking at the clock or the dashboard.
-- One check-in = `clawd status`, decide with the table below, `clawd do` each action, done.
-  Don't spam actions: a feed you don't need can cost happiness.
-- If `status` says `"brainRunning": false`, the game itself isn't running: do nothing and report it.
+It reads the pet's status, does everything that is needed in the right order, and prints three
+lines. **Reply with those three lines exactly as printed** - nothing to decide, nothing to add.
+
+- If it prints an error (no state, broker unreachable), report the error line and stop. Don't
+  retry, and don't try other commands to "fix" it.
+- If the first line says the pet **has died** or **passed away**, report it. Starting a new egg
+  is the owner's decision: only run `clawd do newegg` when the owner asks for it.
+
+Other commands, only when asked: `clawd status` (the full status as JSON) and `clawd do <action>`
+(`feed | play | clean | med | sleep | wake | warm | newegg`).
 
 Setup: the `clawd` command (`agent/clawd.js` in the repo, Node 18+) needs
 `CLAWD_MQTT=mqtt://user:password@host:1883` - the broker the pet lives on. See `agent/README.md`.
 
-## How Clawd works
+## Play fair
 
-**Meters** (0-100%): `food`, `happiness`, `energy`, `hygiene`, and `health`. Every few seconds of
-game time they change a little:
+The command can only see what Home Assistant shows and press the buttons a person has. Never
+change settings or the difficulty, publish to MQTT, call n8n, Home Assistant or the clock
+directly, or edit anything the game stores.
 
-- Awake: food and happiness drop, energy drops, hygiene drops (faster with poop on the floor).
-  Asleep: food drops much slower, happiness stays, energy refills. `rules.hungryAfterHours` is how
-  long a full pet takes to get hungry while awake - the difficulty's pace for everything.
-- **Poop** comes a while after each meal. Each poop makes hygiene drop faster.
-- **Illness** (`sick`): while awake, if food, happiness or hygiene is below 20%, or there are 2+
-  poops, there is a chance (`rules.sicknessChancePct`) each step to fall ill. Ill, it loses health.
-- **Health** drops while food is 0, hygiene is 0 or it is ill; otherwise it slowly recovers. Health
-  0 = death. This is the only way a well-kept pet dies young - and it is always avoidable.
-- **Care score** (`care`): how well it is raised. It goes **up** +10 for feeding when food is
-  below 70%, +10 for cleaning up poop, +10 for medicine when ill, +5 for playing. It goes **down**
-  25 each time a meter hits 0 and each time it falls ill. Feeding when food is above 90% costs
-  happiness.
-- **Sleep:** it sleeps from `rules.sleepsFrom` to `rules.sleepsUntil` on its own. Asleep it refuses
-  food, cleaning and play; medicine and `wake` still work. `sleep` during the day is a nap.
-  Food still drops while it sleeps (slower). On most difficulties a pet that goes to bed fed lasts
-  the night; on **Nightmare** it doesn't - it needs a **night feed**: `wake`, `feed`, `sleep`. A pet
-  you woke stays up until the next change of its sleep schedule, so always put it back to bed.
+## What `clawd auto` does (for reference)
 
-**Growing up:** egg → baby → child → teen → adult (at `rules.adultAt` hours) → elder
-(`rules.elderAt`). At adulthood the care score decides its type, and the type decides the rest:
+The policy in `agent/policy.js`, from the game's real rules: the adult type is decided by the
+care score when it grows up, care comes from feeding below 70 % food (+10), cleaning up poop
+(+10), medicine (+10) and playing (+5 each, as long as energy lasts), and it is lost when a meter
+hits 0 or the pet falls ill (-25). Energy only comes back while asleep, and asleep a pet can't
+fall ill and gets hungry much slower. So on each check-in it:
 
-| Adult | Care when it grows up | What follows |
-|---|---|---|
-| happy | ≥ `rules.careForHappyAdult` | elder with the longest old age (`elderLifespanHours` × 1.5); can become a **legend** |
-| normal | in between | elder with a normal old age |
-| grumpy | ≤ `rules.careForGrumpyAdult` | never an elder; the shortest life |
+1. gives medicine if the pet is ill (works asleep);
+2. wakes it only for something that earns care or keeps it safe;
+3. cleans (poop, or hygiene below 50 %), feeds below 70 % food (in the evening before bedtime:
+   below 90 %, and cleans below 90 %, so the night is safe), and plays while energy is 25 % or more;
+4. puts it back to bed;
+5. warms an egg; never starts a new one.
 
-A **legend**: a happy elder that stays well raised - health 80%+, not ill, and care ≥
-`rules.careForLegend` - for `rules.legendAfterHours` hours (the count pauses, it isn't lost, when it
-slips). A legend lives longest, and its egg hatches faster with a head start in care.
-`status.next` and `status.nextInHours` tell you what comes next and when.
+Every 30 minutes this raises a happy adult on Nightmare with a wide margin, and a legend; it
+copes with a quarter of the check-ins missed, or six hours without any at night
+(`test/agent-policy.test.js`).
 
 ## When to check in
 
-| Difficulty (`status.difficulty`) | Check in every | Also |
-|---|---|---|
-| I Can Win | 2 h | |
-| Easy | 2 h | |
-| Medium | 2 h | |
-| Hard | 1.5 h | |
-| Nightmare | 30 min | a night check at 01:00 and 04:00 |
-
-On every level also check in **about 30 minutes before `sleepsFrom`** (the bedtime check) and **right
-after `sleepsUntil`** (it just woke up). No need to check at night: nothing can be done except
-medicine, and it can't fall ill asleep.
-
-**Growing up is the moment that matters most.** The adult type is fixed from the care score at
-the exact moment it becomes an adult, and only a happy adult can become a legend. When
-`status.next` is `Adult` and `nextInHours` is 6 or less, **check in twice as often** until it has
-grown up: every meal, cleanup and play in those hours counts, and an illness caught late costs 25.
-
-## What to do at a check-in
-
-**Nightmare night check (01:00 and 04:00):** if it's ill → `med`. If food is below 50% → `wake`,
-`feed` (twice if food is below 30%), `clean` if there's poop, then `sleep` again. Otherwise leave
-it asleep. That's all at night.
-
-Go down the list and do **every** line that applies, in this order:
-
-1. **Dead** → `newegg`. Then report how long it lived and how (old age or neglect).
-2. **Egg** → `warm` (each press brings hatching a minute closer).
-3. **Ill** (`sick`) → `med`, even if it is asleep.
-4. **Asleep** → if it's daytime (outside the sleep window) and energy ≥ 90%, a nap is over: `wake`.
-   Otherwise let it sleep and stop here.
-5. **Poop, or hygiene below 60%** → `clean`.
-6. **Food below 70%** → `feed`. At the bedtime check, feed if food is below 90% (the night is long).
-   If food is below 30%, feed twice (a meal is +40%).
-7. **Happiness below 90% and energy at least 15%** → `play`.
-8. **Energy below 25%**, and it isn't the bedtime check → `sleep` (a nap; step 4 wakes it later).
-
-Then report one line: stage, meters, care, what you did, and what comes next.
-
-This routine was tested by playing whole lives with the real game - ten lives on every
-difficulty: every pet reached old age (none died of neglect) and 49 of 50 became legends (all of
-them on I Can Win to Hard, 9 of 10 on Nightmare). Harder difficulties need the shorter check-in
-times above - don't stretch them.
-
-## Good to know
-
-- A `refused` result means the pet was asleep, not alive, or too tired to play - not an error.
-- Playing through this command is the quick version (+15% happiness, +5 care); the Star Catch
-  mini-game on the clock itself gives more when a person plays it. Both are fair play.
-- If it dies young anyway, say why from the last status (food 0? ill for long?) and tighten your
-  check-ins for the next egg.
+Every **30 minutes**, day and night, on every difficulty. Checking in when nothing is needed is
+harmless: it then does nothing.

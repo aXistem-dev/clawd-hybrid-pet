@@ -3,6 +3,8 @@
 //
 //   clawd status          what the pet looks like right now (JSON)
 //   clawd do <action>     feed | play | clean | med | sleep | wake | warm | newegg
+//   clawd auto            one caretaker visit: the policy in policy.js decides and acts,
+//                         then prints three lines to report (never starts a new egg)
 //
 // It only reads what is published for everyone (the state line and the settings in
 // use) and only sends the actions a person has. It cannot change settings, the
@@ -17,6 +19,7 @@
 // No dependencies: Node 18+.
 'use strict';
 const net = require('net');
+const path = require('path');
 
 const ACTIONS = ['feed', 'play', 'clean', 'med', 'sleep', 'wake', 'warm', 'newegg'];
 const STAGES = ['Egg', 'Baby', 'Child', 'Teen', 'Adult', 'Elder', 'Legend'];
@@ -119,8 +122,8 @@ async function main(argv) {
   const env = process.env;
   const T = { state: env.CLAWD_STATE_TOPIC || 'clawd/state', config: env.CLAWD_CONFIG_TOPIC || 'clawd/config', action: env.CLAWD_ACTION_TOPIC || 'clawd/ha' };
   const [cmd, arg] = argv;
-  if (cmd !== 'status' && cmd !== 'do') {
-    console.log('usage: clawd status | clawd do <' + ACTIONS.join('|') + '>');
+  if (cmd !== 'status' && cmd !== 'do' && cmd !== 'auto') {
+    console.log('usage: clawd status | clawd auto | clawd do <' + ACTIONS.join('|') + '>');
     return 2;
   }
   if (cmd === 'do' && !ACTIONS.includes(arg)) {
@@ -135,6 +138,7 @@ async function main(argv) {
     const config = first[T.config] ? JSON.parse(first[T.config]) : null;
     const before = decode(first[T.state], config, Date.now() / 1000);
     if (cmd === 'status') { console.log(JSON.stringify(before, null, 2)); return 0; }
+    if (cmd === 'auto') return await auto(c, T, first[T.state], config, before);
 
     // An action: send it, then wait for the pet's answer (a new state line).
     const counter = before.effectCounter, line = first[T.state];
@@ -154,7 +158,59 @@ async function main(argv) {
   }
 }
 
+// One caretaker visit. Each action waits for its own answer: a state line whose effect
+// counter moved (or, for wake and sleep, whose sleep flag flipped) - the regular state
+// lines n8n publishes in between are not taken for one. Then it waits a moment more:
+// n8n saves the pet's state when a run ends, and a second action arriving while the
+// first run is still finishing would read and write back the old state (a wake undone,
+// a feed refused because the pet still seemed asleep).
+const SETTLE_MS = 1500;
+async function auto(c, T, line, config, before) {
+  const { visit } = require(path.join(__dirname, 'policy.js'));
+  let last = line, pending = null;
+  c.on((topic, payload) => {
+    if (topic !== T.state || payload === last) return;
+    last = payload;
+    if (pending) pending(payload);
+  });
+  let cur = before;
+  const act = (name) => new Promise((resolve) => {
+    const prev = cur;
+    const t = setTimeout(() => { pending = null; resolve(null); }, 8000);
+    pending = (payload) => {
+      const p = decode(payload, config, Date.now() / 1000);
+      if (!p) return;
+      const done = name === 'wake' ? p.asleep === false : name === 'sleep' ? p.asleep === true : p.effectCounter !== prev.effectCounter;
+      if (!done) return;
+      clearTimeout(t); pending = null; cur = p;
+      setTimeout(() => resolve(p), SETTLE_MS);
+    };
+    publish(c, T.action, name === 'newegg' ? 'reset' : name);
+  });
+  const tz = config && config.TZ ? config.TZ : undefined;
+  let hour;
+  try { hour = Number(new Intl.DateTimeFormat('en-GB', { timeZone: tz, hour: 'numeric', hourCycle: 'h23' }).format(new Date())); } catch (e) { hour = new Date().getHours(); }
+  const r = await visit(before, act, { hour });
+  console.log(report(r.status || before, r.actions, config));
+  return 0;
+}
+
+// Three lines for the agent to pass on as they are.
+function report(p, actions, config) {
+  const need = config && config.CARE_HAPPY !== undefined ? ` (happy adult: ${config.CARE_HAPPY} at ${config.ADULT_AT_HOURS}h)` : '';
+  const counts = {};
+  for (const a of actions) counts[a] = (counts[a] || 0) + 1;
+  const did = actions.length ? Object.entries(counts).map(([a, n]) => n > 1 ? `${a} x${n}` : a).join(', ') : 'nothing needed';
+  let l1;
+  if (p.dead) l1 = `${p.stage} - ${p.passedAwayOfOldAge ? 'passed away of old age' : 'has died'} (gen ${p.generation}, care ${p.care}). A new egg is the owner's decision.`;
+  else if (p.egg) l1 = `Egg - hatching ${Math.round((p.hatchProgress || 0) * 100)} %`;
+  else l1 = `${p.stage}${p.type ? ' (' + p.type + ')' : ''}, ${p.ageHours}h - food ${p.food} / happy ${p.happiness} / energy ${p.energy} / hygiene ${p.hygiene} / health ${p.health}${p.sick ? ' / ILL' : ''}, care ${p.care}${need}`;
+  const l2 = `did: ${did}${p.alive ? (p.asleep ? ' - now asleep' : ' - now awake') : ''}`;
+  const l3 = p.next ? `next: ${p.next} in ${p.nextInHours}h` : 'next: -';
+  return [l1, l2, l3].join('\n');
+}
+
 if (require.main === module) {
   main(process.argv.slice(2)).then((code) => process.exit(code), (e) => { console.error(e.message); process.exit(1); });
 }
-module.exports = { decode, ACTIONS, main };
+module.exports = { decode, ACTIONS, main, report };

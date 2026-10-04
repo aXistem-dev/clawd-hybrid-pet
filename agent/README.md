@@ -14,6 +14,7 @@ Works with the n8n brain (view or push mode): it talks to the pet over MQTT.
 ```bash
 export CLAWD_MQTT='mqtt://user:password@broker-host:1883'   # the broker the pet lives on
 node agent/clawd.js status                                   # what the pet looks like
+node agent/clawd.js auto                                     # one check-in: decide and do what it needs
 node agent/clawd.js do feed                                  # feed, play, clean, med, sleep, wake, warm, newegg
 ```
 
@@ -31,6 +32,11 @@ secret store.
 what comes next and when, the difficulty and its rules, and whether the game is running. `do`
 prints the result (`fed`, `refused`, ...) and the new status.
 
+`auto` is a whole check-in: the policy in [`policy.js`](policy.js) decides each next action from
+the status, `clawd` sends it and waits for the pet's answer (and 1.5 s more, so n8n has saved the
+pet before the next action arrives), until nothing is left to do. It prints three lines - the pet,
+what it did, what comes next - and never starts a new egg.
+
 ## 2. The skill
 
 [`skills/clawd-caretaker/SKILL.md`](skills/clawd-caretaker/SKILL.md) teaches the agent how Clawd
@@ -45,9 +51,8 @@ works, when to check in, and what to do - and to play fair. Install it where you
 
 ## 3. Keep it checking in
 
-The agent has to come back regularly - every 30 minutes to 2 hours depending on the difficulty
-(the skill has the table), plus a check before bedtime and one when it wakes up, and on Nightmare
-two night feeds (01:00 and 04:00).
+The agent has to come back regularly: every 30 minutes, day and night, on every difficulty. Each
+check-in is one `clawd auto`; when nothing is needed it does nothing.
 
 - **Claude Code:** `/loop take care of Clawd with the clawd-caretaker skill` - it paces itself - or
   `/schedule` a recurring check-in.
@@ -63,11 +68,13 @@ two night feeds (01:00 and 04:00).
 |---|---|
 | read `clawd status` | change settings or the difficulty |
 | feed, play, clean, give medicine, put to bed, wake, warm the egg | touch n8n, Home Assistant, the clock or MQTT directly |
-| start a new egg after a death | restart a pet that is still alive to "try again" |
+| start a new egg after a death, when the owner asks | restart a pet that is still alive to "try again" |
 
 ## How well does it play?
 
-[`test/agent.test.js`](../test/agent.test.js) plays the skill's exact routine through whole lives
-with the real game engine: five lives per difficulty, from *I Can Win* to *Nightmare*. Over ten
-lives per level every pet reached old age - none died of neglect - and 49 of 50 became legends
-(all on I Can Win to Hard, 9 of 10 on Nightmare, which also needs night feeds).
+[`test/agent-policy.test.js`](../test/agent-policy.test.js) plays `clawd auto`'s policy through
+whole lives with the real game engine, seeing only the published state line. On Nightmare, with a
+check-in every 30 minutes, every pet becomes a happy adult with about 3,500 care where 960 is
+needed, then a legend; nothing ever reaches 0 and it never falls ill. It stays a happy adult with
+a quarter of the check-ins missed, with six hours without any every night, and with check-ins only
+every hour or two. [`test/agent.test.js`](../test/agent.test.js) plays the older step-by-step routine.

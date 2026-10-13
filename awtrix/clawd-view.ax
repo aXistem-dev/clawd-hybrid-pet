@@ -317,7 +317,7 @@ class Clawd
     return true
   end
 
-  # Play a tune: sound.play() on AWTRIX NG 1.2 and later, sound.rtttl() before that.
+  # Play a tune with sound.play(), or with sound.rtttl() on firmware that doesn't have it.
   def _t(t)
     try
       sound.play({'rtttl': t})

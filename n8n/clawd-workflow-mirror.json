@@ -290,6 +290,6 @@
     "callerPolicy": "workflowsFromSameOwner"
   },
   "meta": {
-    "clawdEngine": "2.1.0"
+    "clawdEngine": "2.2.0"
   }
 }

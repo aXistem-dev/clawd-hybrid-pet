@@ -17,7 +17,7 @@
 //          over MQTT.
 // ============================================================================
 
-const ENGINE_VERSION = '2.1.0';
+const ENGINE_VERSION = '2.2.0';
 
 // ---- settings --------------------------------------------------------------
 // Every value can be overridden from the workflow's "Settings" node.
@@ -811,9 +811,7 @@ function checkNotify(s, cfg, nowMs) {
   if (nowMs - (s.lastNotify || 0) < 1800000) return null;
   if (s.h < 1500 || s.ha < 1500 || s.cl < 1500 || s.sk === 1) {
     s.lastNotify = nowMs;
-    const n = { text: `${cfg.PET_NAME} needs you!`, textColor: '#D97757' };
-    if (cfg.SOUND) n.soundRtttl = SND_SICK;
-    return n;
+    return { text: `${cfg.PET_NAME} needs you!`, textColor: '#D97757' };
   }
   return null;
 }
@@ -983,6 +981,9 @@ function run(input, store, rawCfg, nowMs) {
     else if (gotSickNow) out.sound = SND_SICK;
   }
   out.notify = checkNotify(s, cfg, nowMs);
+  // The notification itself is silent (its sound key differs between firmware versions);
+  // in push mode its tune goes through /api/v1/audio/play like every other one.
+  if (out.notify && cfg.SOUND && cfg.MODE === 'push' && !out.sound) out.sound = SND_SICK;
 
   if (cfg.MODE === 'push') {
     const sig = signature(s, cfg, nowMs);

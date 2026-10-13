@@ -301,6 +301,19 @@ test('sound and notifications are opt-in and use the right effect', () => {
   assert.equal(r.notify, null, '30 min cooldown');
 });
 
+test('a notification never carries a sound key; in push mode its tune goes to audio/play', () => {
+  const store = {};
+  E.run({ event: 'tick' }, store, {}, T0);
+  Object.assign(store.clawd, { st: 1, ev: 1, h: 1000, lastNotify: 0 });
+  let r = E.run({ event: 'tick' }, store, { NOTIFY: true, SOUND: true, MODE: 'push' }, T0 + 1000);
+  assert.deepEqual(Object.keys(r.notify).sort(), ['text', 'textColor']);
+  assert.ok(r.sound, 'push mode plays a tune with it');
+  store.clawd.lastNotify = 0;
+  r = E.run({ event: 'tick' }, store, { NOTIFY: true, SOUND: true, MODE: 'view' }, T0 + 2000);
+  assert.deepEqual(Object.keys(r.notify).sort(), ['text', 'textColor']);
+  assert.equal(r.sound, null, 'view mode: the clock plays its own tunes');
+});
+
 test('push: every rendered payload is valid for AWTRIX NG', () => {
   const cfg = E.makeConfig({});
   const cases = [];

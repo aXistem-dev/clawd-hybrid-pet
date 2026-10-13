@@ -89,6 +89,7 @@ class MockSound
   var played
   def init() self.played = [] end
   def rtttl(s) self.played.push(s) return true end
+  def play(x) self.played.push(x['rtttl']) return true end
 end
 sound = MockSound()
 

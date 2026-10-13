@@ -38,7 +38,7 @@ listed under `warnings` in the engine's output.
 | `SLEEP_FROM` / `SLEEP_TO` | `22` / `8` | auto-sleep, hours of the day |
 | `NIGHT_FROM` / `NIGHT_TO` | `20` / `6` | night scenery |
 | `SOUND` | `false` | effect tunes on the buzzer |
-| `NOTIFY` | `false` | "Clawd needs you!", at most every 30 min |
+| `NOTIFY` | `false` | "Clawd needs you!", at most every 30 min; silent, except in push mode with `SOUND` |
 | `SWITCH_ON_EVENTS` | `true` | bring Clawd on screen when it hatches, evolves, falls ill or dies |
 | `MIRROR` | `false` | publish the screen as a PNG for Home Assistant ([below](#seeing-the-pet-screen-mirror)) |
 | `BURST` | `true` | push mode: extra frames every 250 ms while an effect plays |

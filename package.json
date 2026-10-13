@@ -1,6 +1,6 @@
 {
   "name": "clawd-hybrid-pet",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "private": true,
   "description": "Clawd, Blueforcer's AWTRIX NG virtual pet, with its rules in n8n or on the clock",
   "scripts": {

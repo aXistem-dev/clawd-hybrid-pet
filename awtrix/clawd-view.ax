@@ -1,7 +1,7 @@
 # @name    Clawd
 # @desc    Clawd the pixel crab (view; rules in n8n or clawdcore)
 # @author  Blueforcer (original Clawd), clawd-hybrid-pet
-# @version 2.1
+# @version 2.2
 # @config  brain  select "Brain"         default=n8n options=n8n,device help="device needs the clawdcore module"
 # @config  name   text   "Pet name"      default=Clawd maxlen=12
 # @config  sound  bool   "Sound"         default=false
@@ -137,12 +137,12 @@ class Clawd
       elif s[16] > 0 && s[16] != 10
         self.fk = s[16]
         self.fe = now_ms()
-        if self.snd sound.rtttl(self.J[(self.fk == 8 && s[18] == 0) ? 6 : self.fk]) end
+        if self.snd self._t(self.J[(self.fk == 8 && s[18] == 0) ? 6 : self.fk]) end
         if self.core != nil && (self.fk == 3 || self.fk == 4 || self.fk >= 9) rotation.show() end
       end
     end
     if s[10] == 1 && self.sk == 0
-      if self.snd sound.rtttl("s:d=8,o=5,b=160:e,p,e") end
+      if self.snd self._t("s:d=8,o=5,b=160:e,p,e") end
       if self.core != nil rotation.show() end
     end
     self.sk = s[10]
@@ -307,7 +307,7 @@ class Clawd
         var x = (cy < p ? cy * 28 / p : (2 * p - cy) * 28 / p) + 2
         self.gp = (x >= 3 && x <= 8) ? 1 : 2
         if self.gp == 1 self.gh += 1 end
-        if self.snd sound.rtttl(self.gp == 1 ? self.J[2] : self.J[6]) end
+        if self.snd self._t(self.gp == 1 ? self.J[2] : self.J[6]) end
         self.gt = now
       end
       rotation.pause()
@@ -315,6 +315,15 @@ class Clawd
       self._x()
     end
     return true
+  end
+
+  # Play a tune: sound.play() on AWTRIX NG 1.2 and later, sound.rtttl() before that.
+  def _t(t)
+    try
+      sound.play({'rtttl': t})
+    except ..
+      sound.rtttl(t)
+    end
   end
 
   # Run the highlighted menu item.
